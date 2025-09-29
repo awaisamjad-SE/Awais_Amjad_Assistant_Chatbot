@@ -17,7 +17,7 @@ const ChatBot = () => {
   const [messageCount, setMessageCount] = useState(0);
   const messagesEndRef = useRef(null);
 
-  const n8nWebhookUrl = "https://n8n.awaisamjad.me/webhook/softsincs";
+  const n8nWebhookUrl = "https://n8n.awaisamjad.me/webhook/ai-agent";
 
   // scroll to bottom only for user messages, not AI replies
   useEffect(() => {
