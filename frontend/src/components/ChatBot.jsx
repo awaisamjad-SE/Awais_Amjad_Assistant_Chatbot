@@ -14,9 +14,10 @@ const ChatBot = () => {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
+  const [messageCount, setMessageCount] = useState(0);
   const messagesEndRef = useRef(null);
 
-  const n8nWebhookUrl = "https://n8n.awaisamjad.me/webhook/ai-agent";
+  const n8nWebhookUrl = "https://n8n.awaisamjad.me/webhook/softsincs";
 
   // scroll to bottom only for user messages, not AI replies
   useEffect(() => {
@@ -55,6 +56,12 @@ const ChatBot = () => {
 
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
+    
+    // Check if input exceeds 100 characters
+    if (inputText.trim().length > 200) {
+      alert('Message too long! Please keep your message under 100 characters.');
+      return;
+    }
 
     const userMessage = {
       id: crypto.randomUUID(),
@@ -66,6 +73,9 @@ const ChatBot = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setIsLoading(true);
+    
+    // Increment message count
+    const newMessageCount = messageCount + 1;
 
     try {
       const userId = getUserId();
@@ -133,6 +143,14 @@ const ChatBot = () => {
 
       setMessages((prev) => [...prev, botMessage]);
       setIsConnected(true);
+      
+      // Update message count and check for auto-reload
+      setMessageCount(newMessageCount);
+      if (newMessageCount >= 10) {
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000); // Reload after 2 seconds to let user see the response
+      }
 
     } catch (error) {
       console.error("Error sending message:", error);
@@ -190,7 +208,9 @@ const ChatBot = () => {
           </div>
           <div className="col">
             <h4 className="mb-0 fw-bold">Awais Amjad Assistant</h4>
-            <small className="text-light opacity-75">Your Personal AI Helper</small>
+            <small className="text-light opacity-75">
+              Your Personal AI Helper {messageCount > 0 && `• ${10 - messageCount} messages left`}
+            </small>
           </div>
           <div className="col-auto">
             <div className="d-flex align-items-center">
@@ -244,10 +264,10 @@ const ChatBot = () => {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type your message to Awais Amjad Assistant... "
+                  placeholder="Type your message to Awais Amjad Assistant... (max 100 chars)"
                   className="form-control border-2"
                   disabled={isLoading}
-                  maxLength={500}
+                  maxLength={100}
                   rows={inputText.split('\n').length || 1}
                   style={{ 
                     borderColor: '#007bff',
@@ -259,12 +279,12 @@ const ChatBot = () => {
                     paddingTop: '12px',
                     paddingBottom: '12px',
                     paddingLeft: '20px',
-                    paddingRight: inputText.length > 400 ? '80px' : '20px'
+                    paddingRight: inputText.length > 80 ? '80px' : '20px'
                   }}
                 />
-                {inputText.length > 400 && (
+                {inputText.length > 80 && (
                   <span className="position-absolute end-0 bottom-0 me-3 mb-2 text-muted small">
-                    {inputText.length}/500
+                    {inputText.length}/100
                   </span>
                 )}
               </div>
