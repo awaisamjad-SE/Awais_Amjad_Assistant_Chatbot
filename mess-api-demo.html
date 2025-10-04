@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mess Management System</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .section {
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 8px;
+      border-left: 4px solid #007bff;
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 20px;
+    }
+    h2 { color: #007bff; }
+    input, select, button {
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 16px;
+      margin: 5px 0;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #6c757d; cursor: not-allowed; }
+    .message {
+      padding: 12px; border-radius: 6px; margin-top: 10px; font-weight: bold;
+    }
+    .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .meal-item {
+      background: #fff; padding: 15px; margin: 10px 0;
+      border-radius: 6px; border-left: 4px solid #28a745;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .total-spent {
+      background: #e3f2fd; padding: 15px;
+      border-radius: 6px; text-align: center;
+      font-size: 18px; font-weight: bold; color: #1976d2;
+    }
+    #qr-reader { width: 100%; }
+  </style>
+  <!-- QR Code Generator -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- QR Code Scanner -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🍽️ Mess Management System</h1>
+
+    <!-- QR Code Generator -->
+    <div class="section">
+      <h2>📱 Generate QR Code</h2>
+      <div class="form-group">
+        <label for="qrStudentId">👤 Enter Student ID:</label>
+        <input type="text" id="qrStudentId" placeholder="Enter Student ID">
+        <button onclick="generateQRCode()">🎉 Generate QR</button>
+      </div>
+      <div id="qrcode"></div>
+    </div>
+
+    <!-- QR Code Scanner -->
+    <div class="section">
+      <h2>📷 Scan Student QR</h2>
+      <div id="qr-reader"></div>
+      <div id="qr-reader-results" class="message"></div>
+    </div>
+
+    <!-- Log Meal Section -->
+    <div class="section">
+      <h2>📝 Log New Meal</h2>
+      <form id="mealForm">
+        <label>👤 Student ID:</label>
+        <input type="text" id="studentId" placeholder="Enter Student ID" required>
+        
+        <label>🍽️ Food Item:</label>
+        <select id="foodItem" required>
+          <option value="Chicken Curry">Chicken Curry - ₹150</option>
+          <option value="Rice">Rice - ₹50</option>
+          <option value="Salad">Salad - ₹30</option>
+          <option value="Dal">Dal - ₹40</option>
+          <option value="Roti">Roti - ₹20</option>
+          <option value="Vegetable">Vegetable - ₹60</option>
+        </select>
+        
+        <label>📊 Quantity:</label>
+        <input type="number" id="quantity" min="1" max="10" value="1" required>
+        
+        <label>💰 Total Price: ₹<span id="totalPrice">150</span></label>
+        
+        <button type="submit" id="submitMeal">✅ Log Meal</button>
+      </form>
+      <div id="mealMessage"></div>
+    </div>
+
+    <!-- Fetch Meals Section -->
+    <div class="section">
+      <h2>📋 Meal History</h2>
+      <form id="fetchForm">
+        <label>👤 Student ID:</label>
+        <input type="text" id="fetchStudentId" placeholder="Enter Student ID to fetch meals" required>
+        <button type="submit" id="fetchMeals">🔍 Fetch Meal History</button>
+      </form>
+      <div id="fetchMessage"></div>
+      <div id="mealHistory"></div>
+    </div>
+  </div>
+
+  <script>
+    const foodOptions = {
+      "Chicken Curry": 150, "Rice": 50, "Salad": 30,
+      "Dal": 40, "Roti": 20, "Vegetable": 60
+    };
+
+    function updateTotalPrice() {
+      const foodItem = document.getElementById('foodItem').value;
+      const quantity = parseInt(document.getElementById('quantity').value) || 1;
+      document.getElementById('totalPrice').textContent = foodOptions[foodItem] * quantity;
+    }
+    document.getElementById('foodItem').addEventListener('change', updateTotalPrice);
+    document.getElementById('quantity').addEventListener('input', updateTotalPrice);
+
+    // QR Code Generator
+    function generateQRCode() {
+      const studentId = document.getElementById("qrStudentId").value.trim();
+      if (!studentId) { alert("Enter Student ID first!"); return; }
+      document.getElementById("qrcode").innerHTML = "";
+      new QRCode(document.getElementById("qrcode"), {
+        text: studentId, width: 180, height: 180
+      });
+    }
+
+    // QR Scanner
+    let html5QrcodeScanner;
+    let scannerRunning = false;
+    
+    function onScanSuccess(decodedText) {
+      document.getElementById("qr-reader-results").innerHTML = 
+        `<div class="success">✅ QR Scanned Successfully: ${decodedText}<br>📱 Camera stopped. Ready to log meal!</div>`;
+      document.getElementById("studentId").value = decodedText; // auto-fill in meal log form
+      document.getElementById("fetchStudentId").value = decodedText; // auto-fill fetch form
+      
+      // Stop the scanner after successful scan
+      if (scannerRunning) {
+        html5QrcodeScanner.clear().then(() => {
+          scannerRunning = false;
+          // Add restart button
+          document.getElementById("qr-reader").innerHTML += 
+            '<button onclick="startScanner()" style="margin-top: 10px;">📷 Restart Scanner</button>';
+        }).catch(err => console.error("Failed to clear scanner", err));
+      }
+    }
+    
+    function startScanner() {
+      if (!scannerRunning) {
+        html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess);
+        scannerRunning = true;
+      }
+    }
+    
+    // Start scanner on page load
+    startScanner();
+
+    // Log Meal
+    document.getElementById('mealForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const studentId = document.getElementById('studentId').value.trim();
+      const foodItem = document.getElementById('foodItem').value;
+      const quantity = parseInt(document.getElementById('quantity').value);
+      const totalPrice = foodOptions[foodItem] * quantity;
+      const messageDiv = document.getElementById('mealMessage');
+      const submitBtn = document.getElementById('submitMeal');
+      
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ Logging meal...';
+      
+      try {
+        const res = await fetch("https://n8n.awaisamjad.me/webhook/mess-log", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            student_id: studentId, food_item: foodItem,
+            quantity, unit_price: foodOptions[foodItem],
+            total_price: totalPrice, date: new Date().toISOString().split("T")[0]
+          })
+        });
+        
+        if (res.ok) {
+          const responseData = await res.text();
+          console.log("Meal log response:", responseData);
+          
+          try {
+            const jsonData = JSON.parse(responseData);
+            let isSuccess = false;
+            let errorMessage = "";
+            
+            // Handle the complex nested response format
+            if (Array.isArray(jsonData) && jsonData[0]?.output) {
+              // Parse the nested JSON string
+              const innerOutput = jsonData[0].output;
+              
+              // Remove markdown code blocks if present
+              const cleanOutput = innerOutput.replace(/```json\n|\n```/g, '');
+              
+              try {
+                const parsedInner = JSON.parse(cleanOutput);
+                if (Array.isArray(parsedInner) && parsedInner[0]?.output) {
+                  const finalOutput = parsedInner[0].output;
+                  isSuccess = finalOutput.valid === true;
+                  if (!isSuccess && finalOutput.error) {
+                    errorMessage = finalOutput.error;
+                  }
+                }
+              } catch (innerParseError) {
+                console.error("Inner parse error:", innerParseError);
+                // Fallback: check for "valid": true in the string
+                isSuccess = innerOutput.includes('"valid": true');
+                if (!isSuccess && innerOutput.includes('"error"')) {
+                  const errorMatch = innerOutput.match(/"error":\s*"([^"]+)"/);
+                  if (errorMatch) errorMessage = errorMatch[1];
+                }
+              }
+            } else {
+              // Direct format check
+              isSuccess = jsonData.output === true || jsonData.success === true || jsonData.valid === true;
+            }
+            
+            if (isSuccess) {
+              messageDiv.innerHTML = `<div class="message success">✅ Meal logged successfully!</div>`;
+              document.getElementById('mealForm').reset(); 
+              document.getElementById('quantity').value = 1;
+              updateTotalPrice();
+            } else {
+              const displayError = errorMessage || "Unknown error occurred";
+              messageDiv.innerHTML = `<div class="message error">❌ Error: ${displayError}</div>`;
+            }
+          } catch (parseError) {
+            console.error("Parse error:", parseError);
+            messageDiv.innerHTML = `<div class="message error">❌ Failed to parse server response</div>`;
+          }
+        } else { 
+          throw new Error(`HTTP ${res.status}: ${await res.text()}`); 
+        }
+      } catch (err) {
+        messageDiv.innerHTML = `<div class="message error">❌ Error: ${err.message}</div>`;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '✅ Log Meal';
+      }
+    });
+
+    // Fetch Meals
+    document.getElementById('fetchForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const studentId = document.getElementById('fetchStudentId').value.trim();
+      const msg = document.getElementById('fetchMessage');
+      const historyDiv = document.getElementById('mealHistory');
+      const fetchBtn = document.getElementById('fetchMeals');
+      
+      msg.innerHTML = ""; 
+      historyDiv.innerHTML = "";
+      fetchBtn.disabled = true;
+      fetchBtn.textContent = '⏳ Fetching meals...';
+      
+      try {
+        const res = await fetch(`https://n8n.awaisamjad.me/webhook/4d9d546e-220a-45ae-9c50-5f9336856494/get-meals/${encodeURIComponent(studentId)}`, {
+          method: "POST", 
+          headers: { 
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ 
+            student_id: studentId,
+            request_type: "fetch_meals"
+          })
+        });
+        
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        
+        const responseText = await res.text();
+        console.log("Raw response:", responseText);
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}...`);
+        }
+        
+        let meals = [];
+        
+        // Handle the complex nested response format
+        if (Array.isArray(data) && data.length > 0 && data[0].output) {
+          try {
+            // Remove markdown code blocks if present
+            const cleanOutput = data[0].output.replace(/```json\n|\n```/g, '');
+            const parsedOutput = JSON.parse(cleanOutput);
+            
+            if (Array.isArray(parsedOutput) && parsedOutput[0]?.output) {
+              const finalOutput = parsedOutput[0].output;
+              
+              // Check if the response is valid
+              if (finalOutput.valid === true) {
+                meals = finalOutput.meals || [];
+              } else {
+                // Handle error case
+                const errorMessage = finalOutput.error || "Student not found";
+                throw new Error(errorMessage);
+              }
+            }
+          } catch (innerError) {
+            console.error("Error parsing nested response:", innerError);
+            throw new Error(innerError.message || "Failed to parse meal data");
+          }
+        } else if (data.meals && Array.isArray(data.meals)) {
+          meals = data.meals;
+        } else if (Array.isArray(data)) {
+          meals = data;
+        }
+        
+        if (!meals || meals.length === 0) { 
+          msg.innerHTML = `<div class="message error">📭 No meals found for Student ID: ${studentId}</div>`; 
+          return; 
+        }
+        
+        msg.innerHTML = `<div class="message success">✅ Found ${meals.length} meals for Student ID: ${studentId}</div>`;
+        let html = ""; 
+        let total = 0;
+        
+        meals.forEach(m => {
+          const price = parseFloat(m.total_price) || 0;
+          total += price;
+          html += `<div class="meal-item">
+            <b>🍽️ ${m.food_item || 'Unknown Item'}</b><br>
+            📊 Quantity: ${m.quantity || 1} | 💰 Unit Price: ₹${m.unit_price || 0}<br>
+            💵 Total Price: ₹${m.total_price || 0}<br>
+            📅 Date: ${m.date || 'Unknown Date'}
+          </div>`;
+        });
+        
+        html += `<div class="total-spent">💰 Total Amount Spent: ₹${total.toFixed(2)}</div>`;
+        historyDiv.innerHTML = html;
+        
+      } catch (err) {
+        console.error("Fetch error:", err);
+        msg.innerHTML = `<div class="message error">❌ Error fetching meals: ${err.message}</div>`;
+      } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.textContent = '🔍 Fetch Meal History';
+      }
+    });
+
+    updateTotalPrice();
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './Components/Navbar';
+import ComprehensiveHome from './pages/ComprehensiveHome';
 import Home from './pages/Home';
 import GenerateQRPage from './pages/GenerateQRPage';
 import ScanQRPage from './pages/ScanQRPage';
@@ -19,7 +20,8 @@ function App() {
       <div className="App" style={appStyle}>
         <Navbar />
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<ComprehensiveHome />} />
+          <Route path="/old-home" element={<Home />} />
           <Route path="/generate-qr" element={<GenerateQRPage />} />
           <Route path="/scan-qr" element={<ScanQRPage />} />
           <Route path="/meal-selection" element={<MealSelectionPage />} />

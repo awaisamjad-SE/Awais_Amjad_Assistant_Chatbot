@@ -1,52 +1,156 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import QRGenerator from '../Components/QRGenerator';
+import QRScanner from '../Components/QRScanner';
+import MealForm from '../Components/MealForm';
+import MealHistory from '../Components/MealHistory';
 
 const Home = () => {
+  const [studentId, setStudentId] = useState("");
+  const [currentView, setCurrentView] = useState("scanner"); // scanner, generator, meal, history
+
   const containerStyle = {
     padding: "20px",
-    maxWidth: "1200px", 
+    maxWidth: "900px", 
     margin: "0 auto",
     fontFamily: "Arial, sans-serif",
-    backgroundColor: "#f8f9fa",
-    minHeight: "calc(100vh - 80px)"
+    backgroundColor: "#f5f5f5"
   };
 
-  const headerStyle = {
-    textAlign: "center",
-    marginBottom: "40px"
+  const sectionStyle = {
+    marginBottom: "30px",
+    padding: "20px",
+    background: "#f9f9f9",
+    borderRadius: "8px",
+    borderLeft: "4px solid #007bff",
+    backgroundColor: "white",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
   };
 
   const titleStyle = {
-    color: "#333",
-    fontSize: window.innerWidth > 768 ? "32px" : "28px",
-    marginBottom: "20px"
-  };
-
-  const subtitleStyle = {
-    color: "#666",
-    fontSize: window.innerWidth > 768 ? "18px" : "16px",
-    lineHeight: "1.6"
-  };
-
-  const cardsContainerStyle = {
-    display: "grid",
-    gridTemplateColumns: window.innerWidth > 768 ? "repeat(auto-fit, minmax(300px, 1fr))" : "1fr",
-    gap: "30px",
-    marginTop: "40px"
-  };
-
-  const cardStyle = {
-    backgroundColor: "white",
-    padding: "30px",
-    borderRadius: "12px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
     textAlign: "center",
-    transition: "transform 0.3s ease, box-shadow 0.3s ease"
+    color: "#333",
+    marginBottom: "30px",
+    fontSize: "28px"
   };
 
-  const iconStyle = {
-    fontSize: "48px",
-    marginBottom: "20px"
+  const sectionTitleStyle = {
+    color: "#007bff",
+    marginBottom: "20px",
+    fontSize: "20px"
+  };
+
+  const navStyle = {
+    display: "flex",
+    justifyContent: "center",
+    gap: "10px",
+    marginBottom: "30px",
+    flexWrap: "wrap"
+  };
+
+  const navButtonStyle = (isActive) => ({
+    padding: "10px 20px",
+    backgroundColor: isActive ? "#007bff" : "#6c757d",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "bold",
+    transition: "background-color 0.3s ease"
+  });
+
+  const studentIdDisplayStyle = {
+    textAlign: "center",
+    padding: "15px",
+    backgroundColor: "#e3f2fd",
+    borderRadius: "8px",
+    marginBottom: "20px",
+    fontSize: "16px",
+    fontWeight: "bold",
+    color: "#1976d2"
+  };
+
+  const renderCurrentView = () => {
+    switch (currentView) {
+      case "generator":
+        return (
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>📱 Generate QR Code</h2>
+            <QRGenerator />
+          </div>
+        );
+      case "scanner":
+        return (
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>📷 Scan Student QR</h2>
+            <QRScanner setStudentId={setStudentId} />
+          </div>
+        );
+      case "meal":
+        return (
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>📝 Log New Meal</h2>
+            {!studentId && (
+              <div style={{ 
+                padding: "15px", 
+                backgroundColor: "#fff3cd", 
+                color: "#856404",
+                borderRadius: "6px",
+                marginBottom: "20px",
+                textAlign: "center"
+              }}>
+                ⚠️ Please scan QR code first or enter Student ID manually
+              </div>
+            )}
+            <div style={{ marginBottom: "15px" }}>
+              <label style={{ fontWeight: "bold", marginBottom: "5px", display: "block" }}>
+                👤 Student ID:
+              </label>
+              <input
+                type="text"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                placeholder="Enter Student ID"
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "16px"
+                }}
+              />
+            </div>
+            <MealForm studentId={studentId} />
+          </div>
+        );
+      case "history":
+        return (
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>📋 Meal History</h2>
+            <div style={{ marginBottom: "15px" }}>
+              <label style={{ fontWeight: "bold", marginBottom: "5px", display: "block" }}>
+                👤 Student ID:
+              </label>
+              <input
+                type="text"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                placeholder="Enter Student ID to fetch meals"
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "16px"
+                }}
+              />
+            </div>
+            <MealHistory studentId={studentId} />
+          </div>
+        );
+      default:
+        return null;
+    }
   };
 
   const cardTitleStyle = {

@@ -46,14 +46,62 @@ export default function MealForm({ studentId }) {
         }),
       });
 
-      if (!res.ok) {
+      if (res.ok) {
+        const responseData = await res.text();
+        console.log("Meal log response:", responseData);
+        
+        try {
+          const jsonData = JSON.parse(responseData);
+          let isSuccess = false;
+          let errorMessage = "";
+          
+          // Handle the complex nested response format
+          if (Array.isArray(jsonData) && jsonData[0]?.output) {
+            // Parse the nested JSON string
+            const innerOutput = jsonData[0].output;
+            
+            // Remove markdown code blocks if present
+            const cleanOutput = innerOutput.replace(/```json\n|\n```/g, '');
+            
+            try {
+              const parsedInner = JSON.parse(cleanOutput);
+              if (Array.isArray(parsedInner) && parsedInner[0]?.output) {
+                const finalOutput = parsedInner[0].output;
+                isSuccess = finalOutput.valid === true;
+                if (!isSuccess && finalOutput.error) {
+                  errorMessage = finalOutput.error;
+                }
+              }
+            } catch (innerParseError) {
+              console.error("Inner parse error:", innerParseError);
+              // Fallback: check for "valid": true in the string
+              isSuccess = innerOutput.includes('"valid": true');
+              if (!isSuccess && innerOutput.includes('"error"')) {
+                const errorMatch = innerOutput.match(/"error":\s*"([^"]+)"/);
+                if (errorMatch) errorMessage = errorMatch[1];
+              }
+            }
+          } else {
+            // Direct format check
+            isSuccess = jsonData.output === true || jsonData.success === true || jsonData.valid === true;
+          }
+          
+          if (isSuccess) {
+            setMessage("✅ Meal logged successfully!");
+            setQuantity(1); // reset form
+            setFoodItem("Chicken Curry");
+          } else {
+            const displayError = errorMessage || "Unknown error occurred";
+            setMessage(`❌ Error: ${displayError}`);
+          }
+        } catch (parseError) {
+          console.error("Parse error:", parseError);
+          setMessage("❌ Failed to parse server response");
+        }
+      } else {
         const errorText = await res.text();
         throw new Error(`HTTP ${res.status}: ${errorText}`);
       }
-
-      setMessage("✅ Meal logged successfully!");
-      setQuantity(1); // reset form
-      setFoodItem("Chicken Curry");
     } catch (err) {
       console.error(err);
       setMessage("❌ Error logging meal: " + err.message);
