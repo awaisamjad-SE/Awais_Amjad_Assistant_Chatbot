@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Google Sheets Viewer</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0}
+    body{padding:20px;background:#f7fafc;color:#0f172a}
+    h1{font-size:1.25rem;margin-bottom:6px}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    input[type=text],select{padding:8px;border-radius:6px;border:1px solid #cbd5e1}
+    button{padding:8px 12px;border-radius:6px;border:0;background:#2563eb;color:#fff;cursor:pointer}
+    button.secondary{background:#64748b}
+    .meta{margin-bottom:12px;color:#334155}
+    .tables{display:flex;flex-direction:column;gap:20px}
+    .sheet-card{background:#fff;padding:12px;border-radius:8px;box-shadow:0 1px 3px rgba(2,6,23,0.06)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid #eef2ff;text-align:left}
+    th{background:#f1f5f9;position:sticky;top:0}
+    .search{margin-left:auto}
+    .small{font-size:0.9rem;color:#475569}
+    pre{white-space:pre-wrap;background:#0f172a;color:#fff;padding:8px;border-radius:6px}
+    @media (max-width:700px){th,td{padding:6px;font-size:13px}}
+  </style>
+</head>
+<body>
+  <h1>Google Sheets Viewer</h1>
+  <div class="controls">
+    <label class="small">Sheet ID:</label>
+    <input id="sheetId" type="text" value="1N4xV7ZqIFb0cWYebdslJSVhRkU68jnUw65WnnvJV4vg" size="44"/>
+    <label class="small">GID (optional):</label>
+    <input id="sheetGid" type="text" placeholder="leave empty to load first sheet" size="8" />
+    <button id="loadBtn">Load sheet</button>
+    <button id="exportCsv" class="secondary">Export visible CSV</button>
+    <div class="search" style="display:flex;gap:8px;align-items:center">
+      <input id="filterInput" type="text" placeholder="Search rows..." />
+      <button id="clearFilter" class="secondary">Clear</button>
+    </div>
+  </div>
+
+  <div class="meta small" id="meta">Public Google Sheet viewer — loading will fetch the first sheet by default.</div>
+
+  <div id="sheetTabs" style="margin:10px 0;display:flex;gap:6px;flex-wrap:wrap"></div>
+  <div class="tables" id="tables"></div>
+
+  <!-- Chart.js from CDN for client-side charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <div class="sheet-card" style="margin-top:14px">
+    <strong>Charts</strong>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <label class="small">Type</label>
+      <select id="chartType"><option value="bar">Bar</option><option value="pie">Pie</option><option value="line">Line</option></select>
+      <label class="small">X column</label>
+      <select id="xColumn"></select>
+      <label class="small">Y column (for sum/avg)</label>
+      <select id="yColumn"></select>
+      <label class="small">Aggregate</label>
+      <select id="aggregate"><option value="count">Count</option><option value="sum">Sum</option><option value="avg">Average</option></select>
+      <button id="drawChart" class="secondary">Draw Chart</button>
+      <button id="clearChart" class="secondary">Clear</button>
+    </div>
+    <div style="margin-top:12px"><canvas id="chartCanvas" height="120"></canvas></div>
+  </div>
+
+  <script>
+    const gsheetBase = 'https://docs.google.com/spreadsheets/d';
+    const sheetIdInput = document.getElementById('sheetId');
+    const sheetGidInput = document.getElementById('sheetGid');
+    const loadBtn = document.getElementById('loadBtn');
+    const tablesDiv = document.getElementById('tables');
+    const metaDiv = document.getElementById('meta');
+    const filterInput = document.getElementById('filterInput');
+    const clearFilter = document.getElementById('clearFilter');
+    const exportCsvBtn = document.getElementById('exportCsv');
+
+  let currentRows = [];
+  let currentHeaders = [];
+  // registry of detected sheets: { gid, headers, rows, label }
+  let detectedSheets = [];
+  // map gid -> {headers, rows}
+  const sheetDataMap = new Map();
+  let currentChart = null;
+
+  const sheetTabs = document.getElementById('sheetTabs');
+  // chart sheet selector
+  const sheetSelector = document.createElement('select'); sheetSelector.id = 'sheetSelector';
+  const xColumnSel = document.getElementById('xColumn');
+  const yColumnSel = document.getElementById('yColumn');
+  const chartTypeSel = document.getElementById('chartType');
+  const aggSel = document.getElementById('aggregate');
+  const drawChartBtn = document.getElementById('drawChart');
+  const clearChartBtn = document.getElementById('clearChart');
+  const chartCanvas = document.getElementById('chartCanvas');
+
+    function parseGviz(text){
+      // gviz returns: google.visualization.Query.setResponse(...);
+      const m = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
+      if(!m) throw new Error('Unexpected gviz response');
+      return JSON.parse(m[1]);
+    }
+
+    function renderTable(title, headers, rows){
+      const card = document.createElement('div');
+      card.className = 'sheet-card';
+
+      const h = document.createElement('div');
+      h.innerHTML = `<strong>${escapeHtml(title)}</strong> <span class="small">(${rows.length} rows)</span>`;
+      card.appendChild(h);
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const thr = document.createElement('tr');
+      headers.forEach(hd => { const th = document.createElement('th'); th.textContent = hd; thr.appendChild(th); });
+      thead.appendChild(thr);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        headers.forEach(hd => {
+          const td = document.createElement('td');
+          td.textContent = row[hd] != null ? row[hd] : '';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      card.appendChild(table);
+
+  tablesDiv.innerHTML = '';
+  tablesDiv.appendChild(card);
+
+      // store for filtering/export
+      currentRows = rows;
+      currentHeaders = headers;
+
+      // populate chart column selectors
+      populateChartSelectors(headers);
+      // show a helpful tab title (meta)
+      metaDiv.textContent = `${title} — ${headers.length} columns, ${rows.length} rows`;
+    }
+
+    function renderMultipleTables(list){
+      tablesDiv.innerHTML = '';
+      list.forEach(item => {
+        const {gid, headers, rows, label} = item;
+        const card = document.createElement('div');
+        card.className = 'sheet-card';
+        const h = document.createElement('div');
+        h.innerHTML = `<strong>${escapeHtml(label||('gid='+gid))}</strong> <span class="small">(gid=${gid})</span> <span class="small"> — ${rows.length} rows</span>`;
+        card.appendChild(h);
+
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const thr = document.createElement('tr');
+        headers.forEach(hd => { const th = document.createElement('th'); th.textContent = hd; thr.appendChild(th); });
+        thead.appendChild(thr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        rows.forEach(row => {
+          const tr = document.createElement('tr');
+          headers.forEach(hd => {
+            const td = document.createElement('td');
+            td.textContent = row[hd] != null ? row[hd] : '';
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        card.appendChild(table);
+        tablesDiv.appendChild(card);
+      });
+    }
+
+    function toRows(table){
+      const cols = table.cols || [];
+      const rows = (table.rows||[]).map(r => {
+        const obj = {};
+        cols.forEach((c,i)=>{
+          const key = c.label || c.id || ('col'+i);
+          const cell = (r.c && r.c[i]) || null;
+          obj[key] = cell ? (cell.v != null ? cell.v : (cell.f != null ? cell.f : '')) : '';
+        });
+        return obj;
+      });
+      const headers = cols.map((c,i)=> c.label || c.id || ('col'+i));
+      return { headers, rows };
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>\"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch])); }
+
+    async function loadSheet(){
+      const sheetId = sheetIdInput.value.trim();
+      const gidInput = (sheetGidInput.value||'').trim();
+      if(!sheetId) return alert('Please provide a sheet id');
+      metaDiv.textContent = 'Loading...';
+      try{
+        // If user provided a gid explicitly, load that sheet only.
+        if(gidInput){
+          await loadSheetByGid(sheetId, gidInput);
+          return;
+        }
+
+        // Try to detect multiple sheets by probing common gid values (0..50).
+        metaDiv.textContent = 'Detecting sheets (probing gids 0..50)...';
+        const candidates = await detectSheets(sheetId, 50);
+        // Render tabs
+        sheetTabs.innerHTML = '';
+        detectedSheets = [];
+        sheetDataMap.clear();
+        if(candidates.length === 0){
+          // fallback: load default (no gid)
+          await loadSheetByGid(sheetId, null);
+          return;
+        }
+        // Build tabs and populate detectedSheets array
+        candidates.forEach((c, idx)=>{
+          const gid = c.gid;
+          const label = c.label || (`Sheet ${idx+1}`);
+          const btn = document.createElement('button');
+          btn.textContent = `${label}`;
+          btn.title = `gid=${gid}`;
+          btn.addEventListener('click', ()=> loadSheetByGid(sheetId, gid));
+          sheetTabs.appendChild(btn);
+          // store placeholder; actual rows will be filled when loaded
+          detectedSheets.push({ gid, headers: c.headers||[], rows: c.rows||[], label });
+          if(c.headers && c.rows){ sheetDataMap.set(String(gid), {headers:c.headers, rows:c.rows}); }
+        });
+
+        // add a Show All button
+        const showAllBtn = document.createElement('button'); showAllBtn.textContent = 'Show all sheets';
+        showAllBtn.className = 'secondary';
+        showAllBtn.addEventListener('click', ()=>{
+          // ensure we have data for each detected sheet; if not, load them serially
+          const promises = detectedSheets.map(d=>{
+            if(d.headers && d.rows && d.rows.length>0) return Promise.resolve(d);
+            return loadSheetByGid(sheetId, d.gid).then(()=> ({ gid:d.gid, headers:sheetDataMap.get(String(d.gid)).headers, rows:sheetDataMap.get(String(d.gid)).rows, label:d.label }));
+          });
+          Promise.all(promises).then(results=>{
+            // render all
+            renderMultipleTables(results);
+          }).catch(e=>console.error(e));
+        });
+        sheetTabs.appendChild(showAllBtn);
+
+        // populate sheet selector used by charts
+        sheetSelector.innerHTML = '';
+        detectedSheets.forEach((d, i) => {
+          const opt = document.createElement('option'); opt.value = String(d.gid); opt.textContent = d.label || (`Sheet ${i+1} (gid=${d.gid})`); sheetSelector.appendChild(opt);
+        });
+
+        // attach sheetSelector into chart UI (insert before draw button)
+        const chartArea = drawChartBtn ? drawChartBtn.parentElement : null;
+        if(chartArea && !document.getElementById('sheetSelector')){
+          const label = document.createElement('label'); label.className='small'; label.textContent='Sheet';
+          chartArea.insertBefore(label, drawChartBtn);
+          chartArea.insertBefore(sheetSelector, drawChartBtn);
+        }
+
+        // load the first detected sheet by default
+        await loadSheetByGid(sheetId, detectedSheets[0].gid);
+
+      }catch(err){
+        console.error(err);
+        metaDiv.innerHTML = 'Failed to load sheet — raw error below:';
+        const pre = document.createElement('pre'); pre.textContent = String(err);
+        tablesDiv.innerHTML = '';
+        tablesDiv.appendChild(pre);
+      }
+    }
+
+    async function loadSheetByGid(sheetId, gid){
+      try{
+        let url = `${gsheetBase}/${sheetId}/gviz/tq?tqx=out:json`;
+        if(gid != null) url += `&gid=${encodeURIComponent(gid)}`;
+        const res = await fetch(url);
+        const text = await res.text();
+        const json = parseGviz(text);
+        const table = json.table;
+        const {headers, rows} = toRows(table);
+        const titleGuess = (json.table && json.table.cols && json.table.cols[0] && json.table.cols[0].label) ? (json.table.cols[0].label + ' (sheet)') : (gid!=null?('gid='+gid):'Sheet');
+        // store in registry and render
+        sheetDataMap.set(String(gid), { headers, rows });
+        // update detectedSheets entry label/rows/headers if present
+        const idx = detectedSheets.findIndex(s=>String(s.gid)===String(gid));
+        const label = titleGuess || (`gid=${gid}`);
+        if(idx >= 0) detectedSheets[idx] = { gid, headers, rows, label };
+        renderTable(label, headers, rows);
+      }catch(err){
+        throw err;
+      }
+    }
+
+    // Probe gids 0..maxGid in parallel and return per-gid table data
+    async function detectSheets(sheetId, maxGid=20){
+      const probes = [];
+      const results = [];
+      for(let gid=0; gid<=maxGid; gid++){
+        const url = `${gsheetBase}/${sheetId}/gviz/tq?tqx=out:json&gid=${gid}`;
+        probes.push(fetch(url).then(r=>r.text()).then(text=>{
+          try{
+            const json = parseGviz(text);
+            const table = json.table || {};
+            const { headers, rows } = toRows(table);
+            // consider this a valid sheet if it has columns (even if rows are 0)
+            if((headers && headers.length>0)){
+              results.push({ gid, headers, rows, label: `Sheet (gid=${gid})` });
+            }
+          }catch(e){ /* ignore failed parses */ }
+        }).catch(()=>{}));
+      }
+      await Promise.all(probes);
+      return results;
+    }
+
+    function applyFilter(){
+      const q = (filterInput.value||'').toLowerCase().trim();
+      if(!q){ renderTable('Filtered', currentHeaders, currentRows); return; }
+      const filtered = currentRows.filter(r => currentHeaders.some(h => String(r[h]||'').toLowerCase().includes(q)));
+      renderTable(`Filtered ("${q}")`, currentHeaders, filtered);
+    }
+
+    clearFilter.addEventListener('click', ()=>{ filterInput.value=''; loadSheet(); });
+    filterInput.addEventListener('input', ()=>{ applyFilter(); });
+
+    loadBtn.addEventListener('click', async ()=>{ await loadSheet(); });
+
+    exportCsvBtn.addEventListener('click', ()=>{
+      if(!currentHeaders || !currentRows) return alert('No data to export');
+      const lines = [];
+      lines.push(currentHeaders.map(h=>`"${String(h).replace(/"/g,'""')}"`).join(','));
+      currentRows.forEach(r => {
+        lines.push(currentHeaders.map(h=>`"${String(r[h]||'').replace(/"/g,'""')}"`).join(','));
+      });
+      const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `sheet-${Date.now()}.csv`; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // Auto-load on open
+    loadSheet();
+
+    // Chart helpers
+    function populateChartSelectors(headers){
+      xColumnSel.innerHTML = '';
+      yColumnSel.innerHTML = '';
+      headers.forEach(h => {
+        const o = document.createElement('option'); o.value = h; o.textContent = h; xColumnSel.appendChild(o);
+        const o2 = document.createElement('option'); o2.value = h; o2.textContent = h; yColumnSel.appendChild(o2);
+      });
+    }
+
+    function groupBy(rows, key){
+      const map = new Map();
+      rows.forEach(r => {
+        const k = r[key] != null ? String(r[key]) : '';
+        if(!map.has(k)) map.set(k, []);
+        map.get(k).push(r);
+      });
+      return map;
+    }
+
+    function computeAggregation(rows, xCol, yCol, agg){
+      if(agg === 'count'){
+        const map = groupBy(rows, xCol);
+        const labels = Array.from(map.keys());
+        const values = labels.map(l => map.get(l).length);
+        return {labels, values};
+      }
+      // sum or avg
+      const map = groupBy(rows, xCol);
+      const labels = Array.from(map.keys());
+      const values = labels.map(l => {
+        const arr = map.get(l).map(r => parseFloat(r[yCol]) || 0);
+        if(agg === 'sum') return arr.reduce((a,b)=>a+b,0);
+        if(agg === 'avg') return arr.length? (arr.reduce((a,b)=>a+b,0)/arr.length):0;
+        return 0;
+      });
+      return {labels, values};
+    }
+
+    function destroyChart(){ if(currentChart){ currentChart.destroy(); currentChart=null; } }
+
+    drawChartBtn.addEventListener('click', ()=>{
+      // pick sheet to draw from
+      const selectedGid = sheetSelector && sheetSelector.value ? sheetSelector.value : null;
+      let rowsForChart = currentRows;
+      if(selectedGid){
+        const sd = sheetDataMap.get(String(selectedGid));
+        if(sd) rowsForChart = sd.rows;
+      }
+      if(!rowsForChart || rowsForChart.length===0) return alert('No data loaded for selected sheet');
+      const xCol = xColumnSel.value; const yCol = yColumnSel.value; const agg = aggSel.value; const type = chartTypeSel.value;
+      if(!xCol) return alert('Select an X column');
+      if((agg==='sum' || agg==='avg') && !yCol) return alert('Select a Y column for sum/avg');
+      const {labels, values} = computeAggregation(rowsForChart, xCol, yCol, agg);
+      destroyChart();
+      const ctx = chartCanvas.getContext('2d');
+      const cfg = {
+        type: type,
+        data: { labels, datasets: [{ label: `${agg} of ${yCol || 'count'} by ${xCol}`, data: values, backgroundColor: labels.map((_,i)=>`hsl(${(i*47)%360} 70% 50%)`), borderColor: 'rgba(0,0,0,0.1)', borderWidth:1 }] },
+        options: { responsive:true, maintainAspectRatio:false }
+      };
+      currentChart = new Chart(ctx, cfg);
+    });
+
+    clearChartBtn.addEventListener('click', ()=>{ destroyChart(); chartCanvas.getContext('2d').clearRect(0,0,chartCanvas.width,chartCanvas.height); });
+  </script>
+</body>
+</html>
